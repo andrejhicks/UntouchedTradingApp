@@ -25,24 +25,24 @@ app.title = "FOREX Web Trader"
 
 server = app.server
 
-PATH = pathlib.Path(__file__).parent
-DATA_PATH = PATH.joinpath("data").resolve()
+# PATH = pathlib.Path(__file__).parent
+# DATA_PATH = PATH.joinpath("data").resolve()
 
-# Loading historical tick data
-currency_pair_data = {
-    "EURUSD": pd.read_csv(
-        DATA_PATH.joinpath("EURUSD.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-    "USDJPY": pd.read_csv(
-        DATA_PATH.joinpath("USDJPY.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-    "GBPUSD": pd.read_csv(
-        DATA_PATH.joinpath("GBPUSD.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-    "USDCHF": pd.read_csv(
-        DATA_PATH.joinpath("USDCHF.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-}
+# # Loading historical tick data
+# currency_pair_data = {
+#     "EURUSD": pd.read_csv(
+#         DATA_PATH.joinpath("EURUSD.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+#     "USDJPY": pd.read_csv(
+#         DATA_PATH.joinpath("USDJPY.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+#     "GBPUSD": pd.read_csv(
+#         DATA_PATH.joinpath("GBPUSD.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+#     "USDCHF": pd.read_csv(
+#         DATA_PATH.joinpath("USDCHF.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+# }
 
 app.layout = html.Div([
     html.H2('Hello World'),
@@ -54,8 +54,8 @@ app.layout = html.Div([
     html.Div(id='display-value')
 ])
 
-@app.callback(dash.dependencies.Output('display-value', 'children'),
-                [dash.dependencies.Input('dropdown', 'value')])
+@app.callback(Output('display-value', 'children'),
+                [Input('dropdown', 'value')])
 def display_value(value):
     return 'You have selected "{}"'.format(value)
 
