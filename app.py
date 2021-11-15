@@ -1,4 +1,6 @@
+  
 # -*- coding: utf-8 -*-
+import os
 import json
 import base64
 import datetime
@@ -12,44 +14,84 @@ import dash_core_components as dcc
 import dash_html_components as html
 import chart_studio.plotly as py
 import plotly.graph_objs as go
-
+import alpaca_trade_api as tradeapi
 from dash.dependencies import Input, Output, State
 from plotly import tools
-
+from dotenv import load_dotenv
+load_dotenv()
 
 app = dash.Dash(
     __name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}],
 )
 
 app.title = "FOREX Web Trader"
-
+api = tradeapi.REST(
+        os.environ.get('AlpacaKey'),
+        os.environ.get('AlpacaSecret'),
+        'https://paper-api.alpaca.markets', api_version='v2')
 server = app.server
-
+idx =pd.IndexSlice
 PATH = pathlib.Path(__file__).parent
 DATA_PATH = PATH.joinpath("data").resolve()
 
 # Loading historical tick data
-currency_pair_data = {
-    "EURUSD": pd.read_csv(
-        DATA_PATH.joinpath("EURUSD.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-    "USDJPY": pd.read_csv(
-        DATA_PATH.joinpath("USDJPY.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-    "GBPUSD": pd.read_csv(
-        DATA_PATH.joinpath("GBPUSD.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-    "USDCHF": pd.read_csv(
-        DATA_PATH.joinpath("USDCHF.csv.gz"), index_col=1, parse_dates=["Date"]
-    ),
-}
+# currency_pair_data = {
+#     "EURUSD": pd.read_csv(
+#         DATA_PATH.joinpath("EURUSD.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+#     "USDJPY": pd.read_csv(
+#         DATA_PATH.joinpath("USDJPY.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+#     "GBPUSD": pd.read_csv(
+#         DATA_PATH.joinpath("GBPUSD.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+#     "USDCHF": pd.read_csv(
+#         DATA_PATH.joinpath("USDCHF.csv.gz"), index_col=1, parse_dates=["Date"]
+#     ),
+# }
 
 # Currency pairs
 currencies = ["EURUSD", "USDCHF", "USDJPY", "GBPUSD"]
+currencies = ['AAPL','CVX','FB','TSLA','XOM','A','M']
+
+iex = 'https://sandbox.iexapis.com/stable'
+token=os.environ.get('IEXTestKey')
+params={'token': token,\
+                            'symbols': ','.join(currencies), \
+                            'types':'chart', \
+                            'range':'1d', \
+                            'chartLast': 2, \
+                            'chartIEXOnly':'true'
+                            }
+
+def update_row_data():
+    mindata = dict()
+    resp=requests.get(iex+'/stock/market/batch',params=params)
+    d=resp.json()
+    df = pd.concat([pd.DataFrame(v) for k,v in d.items()], keys=d)
+    df=df['chart'].apply(pd.Series)
+    df['Symbol']=df.index.get_level_values(0).tolist()# Add Symbol to dataframe
+    df['Symbol']=df['Symbol']
+    df.rename(columns={'close':'ask','open':'bid'}, inplace=True)
+    df['Date']=pd.to_datetime(df['date']+' '+df['minute'].astype(str))
+
+    mindata = dict()
+    for t in currencies:
+        r = df.loc[idx[t,:]]
+        r['Change'] = (r.iloc[-1]['ask']-r.iloc[0]['ask'])/r.iloc[0]['ask']*100
+        mindata.update({t:r})
+    return mindata
+currency_pair_data=update_row_data()
+
+# https://iexcloud.io/docs/api/#historical-prices
+def getchartdata(tkr,chartdays):
+    chartparams={'token': token,'chartCloseOnly':'false'}
+    uri=iex+'/stock/{}/chart/{}'.format(tkr,chartdays)
+    return  pd.DataFrame(requests.get(uri,params=chartparams).json())
 
 # API Requests for news div
 news_requests = requests.get(
-    "https://newsapi.org/v2/top-headlines?sources=bbc-news&apiKey=da8e2e705b914f9f86ed2e9692e66012"
+    "https://newsapi.org/v2/top-headlines?sources=bloomberg&apiKey=da8e2e705b914f9f86ed2e9692e66012"
 )
 
 # API Call to update news
@@ -91,52 +133,47 @@ def update_news():
 
 
 # Returns dataset for currency pair with nearest datetime to current time
-def first_ask_bid(currency_pair, t):
-    t = t.replace(year=2016, month=1, day=5)
-    items = currency_pair_data[currency_pair]
-    dates = items.index.to_pydatetime()
-    index = min(dates, key=lambda x: abs(x - t))
-    df_row = items.loc[index]
-    int_index = items.index.get_loc(index)
-    return [df_row, int_index]  # returns dataset row and index of row
+def first_ask_bid(currency_pair):
+    df_row = currency_pair_data[currency_pair]
+    int_index = currency_pair_data[currency_pair].index.tolist()[-1]
+    return (df_row.iloc[int_index])  # returns dataset row and index of row
 
 
 # Creates HTML Bid and Ask (Buy/Sell buttons)
 def get_row(data):
-    index = data[1]
-    current_row = data[0]
-
+    index = data.name
+    current_row = data
     return html.Div(
         children=[
             # Summary
             html.Div(
-                id=current_row[0] + "summary",
+                id=current_row['Symbol'] + "summary",
                 className="row summary",
                 n_clicks=0,
                 children=[
                     html.Div(
-                        id=current_row[0] + "row",
+                        id=current_row['Symbol'] + "row",
                         className="row",
                         children=[
                             html.P(
-                                current_row[0],  # currency pair name
-                                id=current_row[0],
+                                current_row['Symbol'],  # currency pair name
+                                id=current_row['Symbol'],
                                 className="three-col",
                             ),
                             html.P(
-                                current_row[1].round(5),  # Bid value
-                                id=current_row[0] + "bid",
+                                current_row['bid'].round(5),  # Bid value
+                                id=current_row['Symbol'] + "bid",
                                 className="three-col",
                             ),
                             html.P(
-                                current_row[2].round(5),  # Ask value
-                                id=current_row[0] + "ask",
+                                current_row['Change'].round(5),  # Ask value
+                                id=current_row['Symbol'] + "ask",
                                 className="three-col",
                             ),
                             html.Div(
-                                index,
-                                id=current_row[0]
-                                + "index",  # we save index of row in hidden div
+                                current_row['Date'],
+                                id=current_row['Symbol']
+                                + "lastupdate",  # we save index of row in hidden div
                                 style={"display": "none"},
                             ),
                         ],
@@ -145,7 +182,7 @@ def get_row(data):
             ),
             # Contents
             html.Div(
-                id=current_row[0] + "contents",
+                id=current_row['Symbol'] + "contents",
                 className="row details",
                 children=[
                     # Button for buy/sell modal
@@ -153,7 +190,7 @@ def get_row(data):
                         className="button-buy-sell-chart",
                         children=[
                             html.Button(
-                                id=current_row[0] + "Buy",
+                                id=current_row['Symbol'] + "Buy",
                                 children="Buy/Sell",
                                 n_clicks=0,
                             )
@@ -164,10 +201,10 @@ def get_row(data):
                         className="button-buy-sell-chart-right",
                         children=[
                             html.Button(
-                                id=current_row[0] + "Button_chart",
+                                id=current_row['Symbol'] + "Button_chart",
                                 children="Chart",
                                 n_clicks=1
-                                if current_row[0] in ["EURUSD", "USDCHF"]
+                                if any(current_row['Symbol']==elem for elem in currencies[:2])
                                 else 0,
                             )
                         ],
@@ -190,11 +227,11 @@ def get_color(a, b):
 
 # Replace ask_bid row for currency pair with colored values
 def replace_row(currency_pair, index, bid, ask):
-    index = index + 1  # index of new data row
+    index = currency_pair_data[currency_pair].index.tolist()[-1]  # index of new data row
     new_row = (
-        currency_pair_data[currency_pair].iloc[index]
+        currency_pair_data[currency_pair].iloc[-1]
         if index != len(currency_pair_data[currency_pair])
-        else first_ask_bid(currency_pair, datetime.datetime.now())
+        else first_ask_bid(currency_pair)
     )  # if not the end of the dataset we retrieve next dataset row
 
     return [
@@ -252,6 +289,25 @@ def get_top_bar_cell(cellTitle, cellValue):
 def get_top_bar(
     balance=50000, equity=50000, margin=0, fm=50000, m_level="%", open_pl=0
 ):
+    accountinfo= api.get_account()
+    orders= api.list_positions()
+    open_pl = 0
+    balance = float(accountinfo.portfolio_value)
+    free_margin = float(accountinfo.buying_power)-float(accountinfo.non_marginable_buying_power)
+    margin = float(accountinfo.buying_power)-float(accountinfo.non_marginable_buying_power)
+
+    for order in orders:
+        open_pl += float(order.unrealized_pl)
+        # balance += float(order["profit"])
+
+    equity = balance - open_pl
+    free_margin = equity - margin
+    m_level = "%" if margin == 0 else "%2.F" % ((equity / margin) * 100) + "%"
+    equity = "%.2F" % equity
+    balance = "%.2F" % balance
+    open_pl = "%.2F" % open_pl
+    fm = "%.2F" % free_margin
+    margin = "%2.F" % margin
     return [
         get_top_bar_cell("Balance", balance),
         get_top_bar_cell("Equity", equity),
@@ -471,16 +527,14 @@ def get_modal_fig(currency_pair, index):
 
 # Returns graph figure
 def get_fig(currency_pair, ask, bid, type_trace, studies, period):
-    # Get OHLC data
-    data_frame = currency_pair_data[currency_pair]
-    t = datetime.datetime.now()
-    data = data_frame.loc[
-        : t.strftime(
-            "2016-01-05 %H:%M:%S"
-        )  # all the data from the beginning until current time
-    ]
-    data_bid = data["Bid"]
-    df = data_bid.resample(period).ohlc()
+    
+    # Plot Data Initiation***
+
+    df = getchartdata(currency_pair,'3m')
+    df.rename(columns={'date':'Date'},inplace=True)
+    
+    df['Date']=pd.to_datetime(df['Date'])
+    df.set_index('Date',inplace=True)
 
     subplot_traces = [  # first row traces
         "accumulation_trace",
@@ -783,9 +837,9 @@ app.layout = html.Div(
         # Interval component for live clock
         dcc.Interval(id="interval", interval=1 * 1000, n_intervals=0),
         # Interval component for ask bid updates
-        dcc.Interval(id="i_bis", interval=1 * 2000, n_intervals=0),
+        dcc.Interval(id="i_bis", interval=1 * 30000, n_intervals=0),
         # Interval component for graph updates
-        dcc.Interval(id="i_tris", interval=1 * 5000, n_intervals=0),
+        dcc.Interval(id="i_tris", interval=1 * 30000, n_intervals=0),
         # Interval component for graph updates
         dcc.Interval(id="i_news", interval=1 * 60000, n_intervals=0),
         # Left Panel Div
@@ -809,7 +863,6 @@ app.layout = html.Div(
                             This app continually queries csv files and updates Ask and Bid prices
                             for major currency pairs as well as Stock Charts. You can also virtually
                             buy and sell stocks and see the profit updates.
-
                             [Source Code](https://github.com/plotly/dash-sample-apps/tree/main/apps/dash-web-trader) |
                             [Enterprise Demo](https://plotly.com/get-demo/)
                             """
@@ -825,13 +878,13 @@ app.layout = html.Div(
                             className="three-col",
                             children=datetime.datetime.now().strftime("%H:%M:%S"),
                         ),
-                        html.P(className="three-col", children="Bid"),
-                        html.P(className="three-col", children="Ask"),
+                        html.P(className="three-col", children="Last"),
+                        html.P(className="three-col", children="Change"),
                         html.Div(
                             id="pairs",
                             className="div-bid-ask",
                             children=[
-                                get_row(first_ask_bid(pair, datetime.datetime.now()))
+                                get_row(first_ask_bid(pair))
                                 for pair in currencies
                             ],
                         ),
@@ -1183,12 +1236,12 @@ def generate_update_orders_div_callback():
 # Resize pair div according to the number of charts displayed
 def generate_show_hide_graph_div_callback(pair):
     def show_graph_div_callback(charts_clicked):
-        if pair not in charts_clicked:
-            return "display-none"
+
 
         charts_clicked = charts_clicked.split(",")  # [:4] max of 4 graph
+        if pair not in charts_clicked:
+            return "display-none"
         len_list = len(charts_clicked)
-
         classes = "chart-style"
         if len_list % 2 == 0:
             classes = classes + " six columns"
@@ -1435,34 +1488,8 @@ def update_close_dropdown(orders):
 # Callback to update Top Bar values
 @app.callback(Output("top_bar", "children"), [Input("orders", "children")])
 def update_top_bar(orders):
-    if orders is None or orders is "[]":
-        return get_top_bar()
-
-    orders = json.loads(orders)
-    open_pl = 0
-    balance = 50000
-    free_margin = 50000
-    margin = 0
-
-    for order in orders:
-        if order["status"] == "open":
-            open_pl += float(order["profit"])
-            conversion_price = (
-                1 if order["symbol"][:3] == "USD" else float(order["price"])
-            )
-            margin += (float(order["volume"]) * 100000) / (200 * conversion_price)
-        else:
-            balance += float(order["profit"])
-
-    equity = balance - open_pl
-    free_margin = equity - margin
-    margin_level = "%" if margin == 0 else "%2.F" % ((equity / margin) * 100) + "%"
-    equity = "%.2F" % equity
-    balance = "%.2F" % balance
-    open_pl = "%.2F" % open_pl
-    free_margin = "%.2F" % free_margin
-    margin = "%2.F" % margin
-
+    # if orders is None or orders is "[]":
+    #     return get_top_bar()
     return get_top_bar(balance, equity, margin, free_margin, margin_level, open_pl)
 
 
