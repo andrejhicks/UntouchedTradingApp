@@ -4,3 +4,5 @@ gunicorn
 pandas
 requests
 chart_studio
+alpaca_trade_api
+python-dotenv
