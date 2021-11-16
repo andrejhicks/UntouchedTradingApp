@@ -24,7 +24,7 @@ app = dash.Dash(
     __name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}],
 )
 
-app.title = "FOREX Web Trader"
+app.title = "Trading Viewer"
 api = tradeapi.REST(
         os.environ.get('AlpacaKey'),
         os.environ.get('AlpacaSecret'),
@@ -33,22 +33,6 @@ server = app.server
 idx =pd.IndexSlice
 PATH = pathlib.Path(__file__).parent
 DATA_PATH = PATH.joinpath("data").resolve()
-
-# Loading historical tick data
-# currency_pair_data = {
-#     "EURUSD": pd.read_csv(
-#         DATA_PATH.joinpath("EURUSD.csv.gz"), index_col=1, parse_dates=["Date"]
-#     ),
-#     "USDJPY": pd.read_csv(
-#         DATA_PATH.joinpath("USDJPY.csv.gz"), index_col=1, parse_dates=["Date"]
-#     ),
-#     "GBPUSD": pd.read_csv(
-#         DATA_PATH.joinpath("GBPUSD.csv.gz"), index_col=1, parse_dates=["Date"]
-#     ),
-#     "USDCHF": pd.read_csv(
-#         DATA_PATH.joinpath("USDCHF.csv.gz"), index_col=1, parse_dates=["Date"]
-#     ),
-# }
 
 # Currency pairs
 currencies = ["EURUSD", "USDCHF", "USDJPY", "GBPUSD"]
@@ -846,30 +830,8 @@ app.layout = html.Div(
         html.Div(
             className="three columns div-left-panel",
             children=[
-                # Div for Left Panel App Info
-                html.Div(
-                    className="div-info",
-                    children=[
-                        html.A(
-                            html.Img(
-                                className="logo",
-                                src=app.get_asset_url("dash-logo-new.png"),
-                            ),
-                            href="https://plotly.com/dash/",
-                        ),
-                        html.H6(className="title-header", children="FOREX TRADER"),
-                        dcc.Markdown(
-                            """
-                            This app continually queries csv files and updates Ask and Bid prices
-                            for major currency pairs as well as Stock Charts. You can also virtually
-                            buy and sell stocks and see the profit updates.
-                            [Source Code](https://github.com/plotly/dash-sample-apps/tree/main/apps/dash-web-trader) |
-                            [Enterprise Demo](https://plotly.com/get-demo/)
-                            """
-                        ),
-                    ],
-                ),
                 # Ask Bid Currency Div
+                html.H1(className="text-center",children=['Portfolio Monitor'],),
                 html.Div(
                     className="div-currency-toggles",
                     children=[
@@ -894,6 +856,19 @@ app.layout = html.Div(
                 html.Div(
                     className="div-news",
                     children=[html.Div(id="news", children=update_news())],
+                ),  
+                # Div for Left Panel App Info
+                html.Div(
+                    className="div-info",
+                    children=[
+                        html.A(
+                            html.Img(
+                                className="logo",
+                                src=app.get_asset_url("dash-logo-new.png"),
+                            ),
+                            href="https://plotly.com/dash/",
+                        ),
+                    ],
                 ),
             ],
         ),
