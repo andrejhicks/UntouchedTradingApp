@@ -4,10 +4,12 @@ import os
 import json
 import base64
 import datetime
+from flask.helpers import url_for
 import requests
 import pathlib
 import math
 import pandas as pd
+import numpy as np
 import flask
 import dash
 import dash_core_components as dcc
@@ -19,16 +21,15 @@ from dash.dependencies import Input, Output, State
 from plotly import tools
 from dotenv import load_dotenv
 load_dotenv()
+import pyodbc
 
 app = dash.Dash(
-    __name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}],
+    __name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}],suppress_callback_exceptions=True,
+    url_base_pathname='/Dashboard/'
 )
 
 app.title = "Trading Viewer"
-api = tradeapi.REST(
-        os.environ.get('AlpacaKey'),
-        os.environ.get('AlpacaSecret'),
-        'https://paper-api.alpaca.markets', api_version='v2')
+
 server = app.server
 idx =pd.IndexSlice
 PATH = pathlib.Path(__file__).parent
@@ -36,8 +37,26 @@ DATA_PATH = PATH.joinpath("data").resolve()
 
 # Currency pairs
 currencies = ["EURUSD", "USDCHF", "USDJPY", "GBPUSD"]
+
 currencies = ['AAPL','CVX','FB','TSLA','XOM','A','M']
 
+conn_str = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER='+os.environ.get('server')+ \
+            ';DATABASE='+os.environ.get('database')+ \
+                ';UID='+os.environ.get('dbusername')+ \
+                    ';PWD='+ os.environ.get('dbpassword')
+cnxn = pyodbc.connect(conn_str)       
+cursor = cnxn.cursor()
+cursor.execute("Select Top 10 Symbol, Predicted_Inc From Tickers Where Model_Accuracy > 0.7 Order By Predicted_Inc Desc")
+predictions = pd.DataFrame([list(ele) for ele in cursor],columns=['Ticker','Prediction'])
+currencies = predictions['Ticker'].tolist()
+
+#Initialize Brokerage API conncection
+api = tradeapi.REST(
+        os.environ.get('AlpacaKey'),
+        os.environ.get('AlpacaSecret'),
+        'https://paper-api.alpaca.markets', api_version='v2')
+        
+#Initialize stock data api parameters
 iex = 'https://sandbox.iexapis.com/stable'
 token=os.environ.get('IEXTestKey')
 params={'token': token,\
@@ -170,19 +189,19 @@ def get_row(data):
                 className="row details",
                 children=[
                     # Button for buy/sell modal
-                    html.Div(
-                        className="button-buy-sell-chart",
-                        children=[
-                            html.Button(
-                                id=current_row['Symbol'] + "Buy",
-                                children="Buy/Sell",
-                                n_clicks=0,
-                            )
-                        ],
-                    ),
+                    # html.Div(
+                    #     className="button-buy-sell-chart",
+                    #     children=[
+                    #         html.Button(
+                    #             id=current_row['Symbol'] + "Buy",
+                    #             children="Buy/Sell",
+                    #             n_clicks=0,
+                    #         )
+                    #     ],
+                    # ),
                     # Button to display currency pair chart
                     html.Div(
-                        className="button-buy-sell-chart-right",
+                        className="button-buy-sell-chart",
                         children=[
                             html.Button(
                                 id=current_row['Symbol'] + "Button_chart",
@@ -270,21 +289,20 @@ def get_top_bar_cell(cellTitle, cellValue):
 
 
 # Returns HTML Top Bar for app layout
-def get_top_bar(
-    balance=50000, equity=50000, margin=0, fm=50000, m_level="%", open_pl=0
-):
+def get_top_bar():
     accountinfo= api.get_account()
-    orders= api.list_positions()
+    positions= api.list_positions()
     open_pl = 0
     balance = float(accountinfo.portfolio_value)
     free_margin = float(accountinfo.buying_power)-float(accountinfo.non_marginable_buying_power)
     margin = float(accountinfo.buying_power)-float(accountinfo.non_marginable_buying_power)
-
-    for order in orders:
+    investments=float(accountinfo.long_market_value)
+    cash=float(accountinfo.cash)
+    for order in positions:
         open_pl += float(order.unrealized_pl)
         # balance += float(order["profit"])
 
-    equity = balance - open_pl
+    equity = float(accountinfo.equity)
     free_margin = equity - margin
     m_level = "%" if margin == 0 else "%2.F" % ((equity / margin) * 100) + "%"
     equity = "%.2F" % equity
@@ -294,9 +312,9 @@ def get_top_bar(
     margin = "%2.F" % margin
     return [
         get_top_bar_cell("Balance", balance),
-        get_top_bar_cell("Equity", equity),
+        get_top_bar_cell("Investments", investments),
         get_top_bar_cell("Margin", margin),
-        get_top_bar_cell("Free Margin", fm),
+        get_top_bar_cell("Cash", cash),
         get_top_bar_cell("Margin Level", m_level),
         get_top_bar_cell("Open P/L", open_pl),
     ]
@@ -568,7 +586,7 @@ def get_fig(currency_pair, ask, bid, type_trace, studies, period):
     fig["layout"]["autosize"] = True
     fig["layout"]["height"] = 400
     fig["layout"]["xaxis"]["rangeslider"]["visible"] = False
-    fig["layout"]["xaxis"]["tickformat"] = "%H:%M"
+    fig["layout"]["xaxis"]["tickformat"] = "%m-%d-%y"
     fig["layout"]["yaxis"]["showgrid"] = True
     fig["layout"]["yaxis"]["gridcolor"] = "#3E3F40"
     fig["layout"]["yaxis"]["gridwidth"] = 1
@@ -831,7 +849,7 @@ app.layout = html.Div(
             className="three columns div-left-panel",
             children=[
                 # Ask Bid Currency Div
-                html.H1(className="text-center",children=['Portfolio Monitor'],),
+                html.H1(className="text-center",children=['Untouched Trading'],),
                 html.Div(
                     className="div-currency-toggles",
                     children=[
@@ -1127,48 +1145,88 @@ def generate_order_button_callback(pair):
 
 
 # Function to update orders
-def update_orders(orders, current_bids, current_asks, id_to_close):
-    for order in orders:
-        if order["status"] == "open":
-            type_order = order["type"]
-            current_bid = current_bids[currencies.index(order["symbol"])]
-            current_ask = current_asks[currencies.index(order["symbol"])]
 
-            profit = (
-                order["volume"]
-                * 100000
-                * ((current_bid - order["price"]) / order["price"])
-                if type_order == "buy"
-                else (
-                    order["volume"]
-                    * 100000
-                    * ((order["price"] - current_ask) / order["price"])
-                )
-            )
+def update_orders():
+    idx=pd.IndexSlice
 
-            order["profit"] = "%.2f" % profit
-            price = current_bid if order["type"] == "buy" else current_ask
+    a=api.get_activities()
+    cols=['Activity Type','LeavesQty','CumQty','OrderId','order_status','price','qty','side','symbol','transaction_time','type']
+    orderhist = pd.concat([pd.DataFrame([[v.activity_type,float(v.leaves_qty),float(v.cum_qty), v.order_id, v.order_status, float(v.price), v.qty, v.side, v.symbol, v.transaction_time, v.type]],columns=cols) for v in a])
+    orderhist['transaction_time']=pd.to_datetime(orderhist['transaction_time'],format='%Y-%m-%dT%H:%M:%S.%f%Z')
+    orderhist.sort_values(by=['transaction_time'],ascending=True,inplace=True)
+    orderhist.set_index(['symbol','transaction_time'],inplace=True)
+    orders=pd.DataFrame()
+    r=0
+    cols=['symbol','BuyDate','price','BuyQty','volume','SellDate','close price','sellqty']
+    orders_list=[]
+    for t in np.unique(np.asarray(orderhist.index.tolist()).astype(str)[:,0]):
+        torder=0
+        for transact in orderhist.loc[idx[t,:]].itertuples():
+            if transact.side=='buy' and transact.type!='partial_fill':
+                orders_list = [t,transact.Index,transact.price,transact.qty,transact.CumQty]
+                torder+=1
+            elif len(orders_list)!=0:
+                orders_list.extend([transact.Index,transact.price,transact.qty])
+        if len(orders_list)<len(cols):
+            orders_list.extend([None]*(len(cols)-len(orders_list)))
+        newrow = pd.DataFrame([orders_list],columns=cols).fillna(value=np.nan)
+        orders = orders.append(newrow, ignore_index=True)
+        orders_list=[]
+    orders['profit']=(orders['close price']-orders['price'])*orders['volume']
+    orders['status']=orders['SellDate'].isna().where(orders['SellDate'].isna(),'closed')
+    orders['status']=orders['status'].where(orders['status']=='closed','open')
+    orders['time']=orders['BuyDate'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S'))
+    orders['close time']=orders['SellDate'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S'))
+    orders['id']=orders['symbol']+orders['BuyDate'].apply(lambda x: x.strftime('%M%d'))
+    orders=orders[orders['price'].notna()]
+    currquotes = pd.DataFrame([[q.symbol,q.current_price,q.unrealized_pl] for q in api.list_positions()],columns=['symbol','current_ask','profit'])
+    currquotes.set_index('symbol',inplace=True)
+    for r in orders[orders['status']=='open'].itertuples():
+        orders.loc[r.Index,'profit']=currquotes.at[r.symbol,'profit']
+        orders.loc[r.Index,'close price']=currquotes.at[r.symbol,'current_ask']
 
-            if order["id"] == id_to_close:
-                order["status"] = "closed"
-                order["close Time"] = datetime.datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                order["close Price"] = price
+    # for order in orders:
+    #     if order["status"] == "open":
+    #         type_order = order["type"]
+    #         current_bid = current_bids[currencies.index(order["symbol"])]
+    #         current_ask = current_asks[currencies.index(order["symbol"])]
 
-            if order["tp"] != 0 and price >= order["tp"]:
-                order["status"] = "closed"
-                order["close Time"] = datetime.datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                order["close Price"] = price
+    #         profit = (
+    #             order["volume"]
+    #             * 100000
+    #             * ((current_bid - order["price"]) / order["price"])
+    #             if type_order == "buy"
+    #             else (
+    #                 order["volume"]
+    #                 * 100000
+    #                 * ((order["price"] - current_ask) / order["price"])
+    #             )
+    #         )
 
-            if order["sl"] != 0 and order["sl"] >= price:
-                order["status"] = "closed"
-                order["close Time"] = datetime.datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                order["close Price"] = price
+    #         order["profit"] = "%.2f" % profit
+    #         price = current_bid if order["type"] == "buy" else current_ask
+
+    #         if order["id"] == id_to_close:
+    #             order["status"] = "closed"
+    #             order["close Time"] = datetime.datetime.now().strftime(
+    #                 "%Y-%m-%d %H:%M:%S"
+    #             )
+    #             order["close Price"] = price
+
+    #         if order["tp"] != 0 and price >= order["tp"]:
+    #             order["status"] = "closed"
+    #             order["close Time"] = datetime.datetime.now().strftime(
+    #                 "%Y-%m-%d %H:%M:%S"
+    #             )
+    #             order["close Price"] = price
+
+    #         if order["sl"] != 0 and order["sl"] >= price:
+    #             order["status"] = "closed"
+    #             order["close Time"] = datetime.datetime.now().strftime(
+    #                 "%Y-%m-%d %H:%M:%S"
+    #             )
+    #             order["close Price"] = price
+
     return orders
 
 
@@ -1176,6 +1234,8 @@ def update_orders(orders, current_bids, current_asks, id_to_close):
 def generate_update_orders_div_callback():
     def update_orders_callback(*args):
         orders = []
+        openpositions=api.list_positions()
+        
         current_orders = args[-1]
         close_id = args[-2]
         args = args[:-2]  # contains list of orders for each pair + asks + bids
@@ -1200,9 +1260,8 @@ def generate_update_orders_div_callback():
                         orders.append(order)
         if len(orders) == 0:
             return None
-
         # we update status and profit of orders
-        orders = update_orders(orders, current_bids, current_asks, close_id)
+        orders = update_orders()
         return json.dumps(orders)
 
     return update_orders_callback
@@ -1392,11 +1451,8 @@ def update_order_table(orders, position):
     headers = [
         "Order Id",
         "Time",
-        "Type",
         "Volume",
         "Symbol",
-        "TP",
-        "SL",
         "Price",
         "Profit",
         "Status",
@@ -1405,21 +1461,25 @@ def update_order_table(orders, position):
     ]
 
     # If there are no orders
-    if orders is None or orders is "[]":
-        return [
-            html.Table(html.Tr(children=[html.Th(title) for title in headers])),
-            html.Div(
-                className="text-center table-orders-empty",
-                children=[html.P("No " + position + " positions data row")],
-            ),
-        ]
+    # if orders is None or orders is "[]":
+    #     return [
+    #         html.Table(html.Tr(children=[html.Th(title) for title in headers])),
+    #         html.Div(
+    #             className="text-center table-orders-empty",
+    #             children=[html.P("No " + position + " positions data row")],
+    #         ),
+    #     ]
 
     rows = []
-    list_order = json.loads(orders)
+    list_order = update_orders()
+    list_order = list_order[['id','time','volume','symbol','price','profit','status','close time','close price']]
+    list_order = list_order.reindex(columns=['id','time','volume','symbol','price','profit','status','close time','close price'])
+    list_order=json.loads(list_order.to_json(orient="records"))
+
     for order in list_order:
         tr_childs = []
         for attr in order:
-            if str(order["status"]) == position:
+            if order["status"] == position:
                 tr_childs.append(html.Td(order[attr]))
         # Color row based on profitability of order
         if float(order["profit"]) >= 0:
@@ -1465,8 +1525,7 @@ def update_close_dropdown(orders):
 def update_top_bar(orders):
     # if orders is None or orders is "[]":
     #     return get_top_bar()
-    return get_top_bar(balance, equity, margin, free_margin, margin_level, open_pl)
-
+    return get_top_bar()
 
 # Callback to update live clock
 @app.callback(Output("live_clock", "children"), [Input("interval", "n_intervals")])

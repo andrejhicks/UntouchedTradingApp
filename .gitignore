@@ -2,3 +2,13 @@ venv
 *.pyc
 .DS_Store
 .env
+codes.json
+appc.py
+appr0.py
+loginexample.py
+testfile.py
+testingorderhistory.py
+testscript.py
+USDCHF.csv
+demo.png
+data/
