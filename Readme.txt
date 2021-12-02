@@ -1,30 +1,32 @@
-Untouched Web Trading ñ Trade As a Service
-The Untouched Web Trading Service runs serverless computing to manage investment portfolios of any size. The serverless system allows for rapid scaling to meet the demands needed to make trades efficiently. The application manages market data and monitors user investments through cloud computing and Brokerage APIís. The trade service imports, aggregates, and stores data as needed, performs machine learning, and submits orders through dedicated brokerage APIís. The web interface for Untouched is currently a dashboard to view the users portfolio along with Untouched Tradingís top ranked equities. As trade service executes trade, the user portfolio can be seen through the web user interface. 
+Untouched Web Trading ‚Äì Trade As a Service
+The Untouched Web Trading Service runs serverless computing to manage investment portfolios of any size. The serverless system allows for rapid scaling to meet the demands needed to make trades efficiently. The application manages market data and monitors user investments through cloud computing and Brokerage API‚Äôs. The trade service imports, aggregates, and stores data as needed, performs machine learning, and submits orders through dedicated brokerage API‚Äôs. The web interface for Untouched is currently a dashboard to view the users portfolio along with Untouched Trading‚Äôs top ranked equities. As trade service executes trade, the user portfolio can be seen through the web user interface. 
 Deployment to Azure Web Environment
 1. Create an Azure Account
 2. Create an Alpaca Market Account
 3. Create an IEX Account to retrieve stock data and quotes
 4. Clone GitHub Repositories for the Dash Web App and Serverless Functions
-* https://github.com/andrejhicks/UntouchedTradingApp.git
-* https://github.com/andrejhicks/AlgoTrading_Function.git
+  * https://github.com/andrejhicks/UntouchedTradingApp.git
+  * https://github.com/andrejhicks/AlgoTrading_Function.git
 5. Create Azure App Service 
-a. Configure the deployment of the App source as GitHub through the ìDeployment Centerî in the App Services Deployment Settings. This will create automatic CI/CD updates through GitHub changes.
-b. Use UntouchedTradingApp as the source code for the App Service
-6. Create Azure Function App Instance
-a. This should include a blob storage account
-b. Configure the deployment of the Function App through the ìDeployment Centerî in the Azure Functions Deployment Settings
-c. Use the AlgoTrading_Function repo as the source code for the Function App
+  a. Configure the deployment of the App source as GitHub through the ‚ÄúDeployment Center‚Äù in the App Services Deployment Settings. This will create automatic CI/CD updates through GitHub changes.
+  b. Use UntouchedTradingApp as the source code for the App Service
+6. Create an Azure Function App Instance
+  a. This should include a blob storage account
+  b. Configure the deployment of the Function App through the ‚ÄúDeployment Center‚Äù in the Azure Functions Deployment Settings
+  c. Use the AlgoTrading_Function repo as the source code for the Function App
+  d. Add the azure blob storage as a variable in the Configuration as "blob_conn_str"
+  e. Add an environment variable for the Function Keys and Function URL's, ("FunctionKey","FunctionURL"),("TradeFunctionKey","TradeFunctionUrl")
 7. Create an Azure SQL Server
-a. Run the SQL file ìTradingDatabase.sqlî to construct the SQL Database
-8. Iíve attached the keys used to deploy the applications to my azure account, and a new account within azure should use the same configuration, with the exception of the Uri addresses to functions, apps, and the blob storage.  Algowebtradingappconfig.json, FunctionAppsConfig.json
+  a. Run the SQL file ‚ÄúTradingDatabase.sql‚Äù to construct the SQL Database
+8. I‚Äôve attached the keys used to deploy the applications to my azure account, and a new account within azure should use the same configuration, with the exception of the Uri addresses to functions, apps, and the blob storage.
 9. The function runs on a timer, and executes the data request, model and trade execution. 
 Software Needs
-* VSCode
-* GitHub
-* Azure Account
-o Azure App Service
-o Azure Function Apps
-o Azure SQL Server
-o Azure Storage
-* IEX
+  * VSCode
+  * GitHub
+  * Azure Account
+  o Azure App Service
+  o Azure Function Apps
+  o Azure SQL Server
+  o Azure Storage
+  * IEX
 * Alpaca Markets Brokerage Account
